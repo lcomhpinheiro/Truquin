@@ -1,0 +1,23 @@
+Truco da Mesa — aplicativo desktop offline
+
+Cartas pixel art: Cards! por SpicyGame
+https://spicygame.itch.io/cards
+Licença CC0 1.0 Universal
+https://creativecommons.org/publicdomain/zero/1.0/
+Texto original preservado em static/assets/PACK-README.txt.
+
+Referências das regras: Jogatina, Truco Arena e Truco MTJ.
+As convenções deste jogo estão documentadas na tela Regras e no README.md.
+
+Interface nativa: Qt for Python / PySide6 (The Qt Company).
+Qt e PySide6 são distribuídos pelos respectivos autores sob LGPLv3/GPLv3
+ou licença comercial, conforme o componente. Este aplicativo usa os
+componentes comunitários de Widgets, Network e Multimedia.
+https://www.qt.io/licensing/open-source-lgpl-obligations
+https://code.qt.io/cgit/pyside/pyside-setup.git/
+https://code.qt.io/cgit/qt/qtbase.git/
+
+Empacotamento: PyInstaller, GPL com exceção para o bootloader.
+https://pyinstaller.org/en/stable/license.html
+
+Os efeitos sonoros são sintetizados localmente pelo código deste projeto.

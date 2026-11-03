@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.venv/
+*.log
+test-results/
+build/
+dist/
+*.spec
