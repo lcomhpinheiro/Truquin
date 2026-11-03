@@ -9,6 +9,7 @@ let prevScore = null, prevHandNo = 0, prevPendingKey = '', dealTimer, victorySho
 // para todo mundo ver o lance que decidiu.
 const VICTORY_DELAY = 2800;
 let prevPhase = '', victoryTimer = 0, victoryReady = false;
+let chatScope = 'room', chatOpen = false, chatSeen = 0, chatKey = '';
 try { session = JSON.parse(sessionStorage.getItem('truco-session')); $('nickname').value = localStorage.getItem('truco-name') || ''; } catch {}
 function toast(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 4200); }
 function node(tag, cls, text) { const el = document.createElement(tag); if (cls) el.className = cls; if (text !== undefined) el.textContent = text; return el; }
@@ -25,7 +26,7 @@ $('create-form').onsubmit = e => { e.preventDefault(); enter('create'); };
 $('join-form').onsubmit = e => { e.preventDefault(); enter('join',$('room-code').value.trim().toUpperCase()); };
 $('start').onclick = () => action('start'); $('fill-bots').onclick = () => action('bots'); $('raise').onclick = () => action('raise');
 $('accept').onclick = () => action('respond',{answer:'accept'}); $('run').onclick = () => action('respond',{answer:'run'}); $('reraise').onclick = () => action('respond',{answer:'raise'}); $('rematch').onclick = () => action('rematch');
-$('leave').onclick = async () => { if(busy)return;busy=true;try { await api('action',{...session,action:'leave'});session=null;state=null;lastRender='';sessionStorage.removeItem('truco-session');history.replaceState(null,'','/');$('game').hidden=true;$('home').hidden=false;document.body.classList.remove('at-table','shouting');prevScore=null;prevHandNo=0;prevPendingKey='';victoryShown=false;confetti($('confetti'),false);clearTimeout(victoryTimer);victoryTimer=0;victoryReady=false;prevPhase='';toast('Você saiu da mesa.');rooms(); } catch(e) {toast(e.message);} finally {busy=false;} };
+$('leave').onclick = async () => { if(busy)return;busy=true;try { await api('action',{...session,action:'leave'});session=null;state=null;lastRender='';sessionStorage.removeItem('truco-session');history.replaceState(null,'','/');$('game').hidden=true;$('home').hidden=false;document.body.classList.remove('at-table','shouting');prevScore=null;prevHandNo=0;prevPendingKey='';victoryShown=false;confetti($('confetti'),false);chatOpen=false;$('chat-dock').hidden=true;chatSeen=0;chatKey='';clearTimeout(victoryTimer);victoryTimer=0;victoryReady=false;prevPhase='';toast('Você saiu da mesa.');rooms(); } catch(e) {toast(e.message);} finally {busy=false;} };
 $('rules-open').onclick = $('credits-open').onclick = () => $('rules').showModal(); $('rules-close').onclick = () => $('rules').close();
 $('rules').onclick = e => { if(e.target===$('rules')) { const rect=$('rules').getBoundingClientRect(); if(e.clientX<rect.left||e.clientX>rect.right||e.clientY<rect.top||e.clientY>rect.bottom) $('rules').close(); } };
 async function copyInvite() { const link = `${location.origin}/?mesa=${session.room}`; try { await navigator.clipboard.writeText(link); toast('Convite copiado! Envie para a turma na mesma rede.'); } catch { const box = node('textarea');box.value=link;box.style.position='fixed';box.style.left='-9999px';document.body.append(box);box.select();const ok=document.execCommand('copy');box.remove();toast(ok?'Convite copiado!':`Convite: ${link}`); } }
@@ -35,6 +36,8 @@ async function rooms() { if(session) return; try { const data = await api('rooms
 function seatPosition(i, s) { const relative = (i - s.seat + s.capacity) % s.capacity; return s.capacity === 2 ? ['bottom','top'][relative] : ['bottom','left','top','right'][relative]; }
 function shoutWord(value) { return value === 3 ? 'TRUCO!' : value === 6 ? 'SEIS!' : value === 9 ? 'NOVE!' : 'DOZE!'; }
 function replay(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+function setCards(box, cards) { const key = cards.map(c => (c && c.id) || 'x').join(','); if (box.dataset.key === key) return; box.dataset.key = key;
+  box.replaceChildren(...cards.map((c, i) => { const img = cardImage(c); img.style.setProperty('--i', String(i)); return img; })); }
 function confetti(box, on) { box.replaceChildren(); if (!on) return; const colors = ['#e6bd65','#83b9d0','#d87960','#8fd6a8','#fff3cf'];
   for (let i = 0; i < 30; i++) { const bit = node('i'); bit.style.setProperty('--x', `${Math.random() * 100}%`);
    bit.style.setProperty('--d', `${(Math.random() * 2.4).toFixed(2)}s`); bit.style.setProperty('--r', `${Math.round(Math.random() * 540)}deg`);
@@ -60,7 +63,9 @@ function render(s) {
  table.classList.toggle('resolved',settled);table.parentElement.classList.toggle('resolved',settled);
  document.querySelector('.table-logo').hidden=s.table.length>0;
  const dots=$('trick-dots');dots.replaceChildren();if(s.hand_no)for(let i=0;i<3;i++)dots.append(node('div',`trick-dot${i<s.results.length&&s.results[i]!==null?' won-'+s.results[i]:''}`,i<s.results.length?(s.results[i]===null?'=':s.results[i]===s.seat%2?'✓':'×'):String(i+1)));
- const yourTurn=s.phase==='playing'&&!s.pending&&s.turn===s.seat;const canRespond=s.phase==='eleven'?s.eleven===s.seat%2:!!s.pending&&s.pending.team!==s.seat%2;
+ const yourTurn=s.phase==='playing'&&!s.pending&&s.turn===s.seat;
+ const ran=(s.pending&&s.pending.ran)||[],iRan=ran.includes(s.seat);
+ const canRespond=s.phase==='eleven'?s.eleven===s.seat%2:!!s.pending&&s.pending.team!==s.seat%2&&!iRan;
  let status='';
  if(s.phase==='lobby')status=s.players.length<s.capacity?`Aguardando a turma · ${s.players.length} de ${s.capacity} lugares ocupados.`:(s.host?'Mesa completa. Pode começar a resenha!':'Mesa completa. Aguardando o anfitrião começar.');
  else if(s.phase==='eleven')status=canRespond?'Mão de onze! Olhe as cartas e decida: jogar por 3 ou correr.':'A equipe com onze está decidindo se joga.';
@@ -87,6 +92,20 @@ function render(s) {
  $('challenge-kicker').textContent=s.pending?`${s.players[s.pending.seat]?.name||'A outra equipe'} pediu`.toUpperCase():'DESAFIO NA MESA';
  $('challenge-detail').textContent=s.phase==='eleven'?'A decisão vale a partida.':`Equipe ${s.pending?.team===0?'Azul':'Coral'} pediu ${s.pending?.value||3} pontos.`;
  $('challenge-cost').textContent=canRespond?`Aceitar: vale ${s.phase==='eleven'?3:s.pending.value}. Correr: adversários ganham ${s.phase==='eleven'?1:s.stake}.`:'Sua equipe lançou o desafio.';
+ const showCards=challenge&&!!s.vira;
+ $('challenge-cards').hidden=!showCards;
+ if(showCards){
+  setCards($('cc-vira'),[s.vira]);
+  $('cc-manilha').textContent=`MANILHA ${ranks[(ranks.indexOf(s.vira.rank)+1)%10]}`;
+  setCards($('cc-hand'),s.hand);
+  $('cc-partner-group').hidden=!s.partner.length;
+  if(s.partner.length)setCards($('cc-partner'),s.partner);
+ }
+ const waiting=s.pending?[...Array(s.capacity).keys()].filter(i=>i%2!==s.pending.team&&!ran.includes(i)):[];
+ const missing=waiting.map(i=>i===s.seat?'você':s.players[i].name).join(' e ');
+ $('challenge-ran').hidden=!(s.pending&&ran.length);
+ if(s.pending&&ran.length)$('challenge-ran').textContent=(iRan?'Você quis correr.':`${ran.map(i=>s.players[i].name).join(' e ')} quis correr.`)+(missing?` Falta ${missing} decidir.`:'');
+ $('challenge-wait').textContent=iRan?'Esperando a decisão do seu parceiro…':'Aguardando a resposta da outra equipe…';
  $('challenge-wait').hidden=canRespond;
  $('run').textContent=`Correr · ceder ${s.phase==='eleven'?1:s.stake}`;
  $('response-actions').hidden=!canRespond;$('accept').textContent=s.phase==='eleven'?'Jogar por 3':`Aceitar · ${s.pending?.value||s.stake} pontos`;$('reraise').hidden=s.phase==='eleven'||!s.pending||s.pending.value===12;
@@ -122,6 +141,28 @@ function render(s) {
  hand.replaceChildren();s.hand.forEach((c,index)=>{const b=node('button','card-button');b.style.setProperty('--i',String(index));b.append(cardImage(c));b.disabled=!yourTurn;b.setAttribute('aria-label',c.blind?'Jogar carta às cegas':`Jogar ${c.rank} ${suitSymbol[c.suit]}`);if(s.vira&&c.rank===ranks[(ranks.indexOf(s.vira.rank)+1)%10])b.classList.add('is-manilha');b.onclick=()=>action('play',{card:c.id,covered:$('covered').checked});hand.append(b);});
  $('partner-area').hidden=!s.partner.length;$('partner-hand').replaceChildren(...s.partner.map(cardImage));
  $('history').replaceChildren(...s.log.slice().reverse().map(msg=>node('li','',msg)));
+ renderChat(s);
+}
+
+function renderChat(s) {
+ const all=s.chat||[];
+ $('chat-tab-team').hidden=s.capacity!==4;
+ if(s.capacity!==4&&chatScope==='team')chatScope='room';
+ const msgs=all.filter(m=>m.scope===chatScope);
+ const key=`${chatScope}|${s.seat}|${msgs.map(m=>m.id).join(',')}`;
+ if(key!==chatKey){
+  chatKey=key;const log=$('chat-log');
+  const atBottom=log.scrollHeight-log.scrollTop-log.clientHeight<40;
+  log.replaceChildren(...(msgs.length?msgs.map(m=>{
+   const li=node('li',`team-${m.team}${m.seat===s.seat?' mine':''}${m.scope==='team'?' is-team':''}`);
+   li.append(node('b','',m.seat===s.seat?'Você':m.name),document.createTextNode(m.text));return li;
+  }):[node('li','chat-empty',chatScope==='team'?'Conversa reservada à sua dupla. Os adversários não leem.':'Ninguém falou ainda. Quebra o gelo!')]));
+  if(atBottom)log.scrollTop=log.scrollHeight;
+ }
+ const last=all.length?all[all.length-1].id:0;
+ if(chatOpen)chatSeen=last;
+ const unread=all.filter(m=>m.id>chatSeen&&m.seat!==s.seat).length;
+ $('chat-badge').hidden=!unread||chatOpen;$('chat-badge').textContent=String(unread);
 }
 async function poll() { if(!session||pollBusy)return;pollBusy=true;const activeSession=session;try{const s=await api(`state?room=${encodeURIComponent(activeSession.room)}&token=${encodeURIComponent(activeSession.token)}`);if(session!==activeSession)return;state=s;render(s);$('connection').lastChild.textContent=' CONECTADO';$('connection').querySelector('i').style.background='#588b5a';}catch(e){$('connection').lastChild.textContent=' RECONECTANDO';$('connection').querySelector('i').style.background='#d87960';if(e.message.includes('Mesa não encontrada')||e.message.includes('sessão não pertence')) {session=null;sessionStorage.removeItem('truco-session');$('game').hidden=true;$('home').hidden=false;document.body.classList.remove('at-table');toast(e.message);}}finally{pollBusy=false;}}
 const invited=new URLSearchParams(location.search).get('mesa');if(invited&&!session){$('room-code').value=invited.toUpperCase();setTab(false);}
@@ -140,6 +181,18 @@ $('fullscreen').onclick=async()=>{
 document.addEventListener('fullscreenchange',()=>{$('fullscreen').textContent=document.fullscreenElement?'⛶ Sair da tela cheia':'⛶ Tela cheia';});
 
 $('victory-leave').onclick=()=>$('leave').click();
+function setChatScope(scope){chatScope=scope;chatKey='';
+ for(const [id,name] of [['chat-tab-room','room'],['chat-tab-team','team']]){$(id).classList.toggle('selected',scope===name);$(id).setAttribute('aria-selected',String(scope===name));}
+ $('chat-dock').classList.toggle('team-mode',scope==='team');
+ $('chat-input').placeholder=scope==='team'?'Só o seu parceiro lê…':'Falar na mesa…';
+ if(state)renderChat(state);}
+$('chat-tab-room').onclick=()=>setChatScope('room');$('chat-tab-team').onclick=()=>setChatScope('team');
+$('chat-open').onclick=()=>{chatOpen=!chatOpen;$('chat-dock').hidden=!chatOpen;if(chatOpen){if(state)renderChat(state);$('chat-log').scrollTop=$('chat-log').scrollHeight;$('chat-input').focus();}};
+$('chat-close').onclick=()=>{chatOpen=false;$('chat-dock').hidden=true;};
+$('chat-form').onsubmit=async e=>{e.preventDefault();const text=$('chat-input').value.trim();if(!text||!session)return;
+ $('chat-input').value='';
+ try{const result=await api('action',{...session,action:'chat',text,scope:chatScope});state=result;render(result);$('chat-log').scrollTop=$('chat-log').scrollHeight;}
+ catch(err){toast(err.message);$('chat-input').value=text;}};
 $('table-rules').onclick=()=>{$('table-drawer').close();$('rules').showModal();};
 
 $('cut-button').onclick=()=>action('cut',{position:Number($('cut-slider').value)});

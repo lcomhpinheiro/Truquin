@@ -69,7 +69,46 @@ class RulesTests(unittest.TestCase):
         r.respond(1, 'raise')
         self.assertEqual(r.stake, 9)
         r.respond(0, 'run')
+        # Correr é decisão da dupla: com um só recusando, a mão continua de pé.
+        self.assertEqual(r.score, [0, 0])
+        self.assertEqual(r.pending['ran'], [0])
+        r.respond(2, 'run')
         self.assertEqual(r.score, [0, 9])
+
+    def test_single_refusal_is_not_enough_and_partner_can_accept(self):
+        r = room()
+        r.action(0, 'raise', {})
+        r.respond(1, 'run')
+        self.assertIsNotNone(r.pending)
+        self.assertEqual(r.score, [0, 0])
+        # Quem já correu não responde de novo; a palavra fica com o parceiro.
+        with self.assertRaises(server.GameError):
+            r.respond(1, 'accept')
+        r.respond(3, 'accept')
+        self.assertIsNone(r.pending)
+        self.assertEqual(r.stake, 3)
+        self.assertEqual(r.score, [0, 0])
+
+    def test_duel_refusal_needs_only_the_single_opponent(self):
+        r = room(2)
+        r.action(0, 'raise', {})
+        r.respond(1, 'run')
+        self.assertEqual(r.score, [1, 0])
+
+    def test_chat_scopes_reach_only_the_right_seats(self):
+        r = room()
+        r.chat_message(0, 'oi mesa', 'room')
+        r.chat_message(0, 'tenho manilha', 'team')
+        self.assertEqual([m['text'] for m in r.view(0)['chat']], ['oi mesa', 'tenho manilha'])
+        self.assertEqual([m['text'] for m in r.view(2)['chat']], ['oi mesa', 'tenho manilha'])
+        self.assertEqual([m['text'] for m in r.view(1)['chat']], ['oi mesa'])
+        self.assertEqual([m['text'] for m in r.view(3)['chat']], ['oi mesa'])
+        with self.assertRaises(server.GameError):
+            r.chat_message(1, '   ', 'room')
+        # No duelo não existe dupla: tudo vira conversa de mesa.
+        duel = room(2)
+        duel.chat_message(0, 'secreto?', 'team')
+        self.assertEqual(duel.view(1)['chat'][0]['scope'], 'room')
 
     def test_accepted_raise_right_alternates(self):
         r = room(2)

@@ -87,6 +87,8 @@ class Room:
         self.cutter = 0
         self.cut_position = None
         self.trick_winner = None
+        self.chat = []
+        self.chat_seq = 0
 
     def say(self, message):
         self.log.append(message)
@@ -174,6 +176,24 @@ class Room:
             self.phase = 'hand_end'
             self.deadline = time.time() + 4
 
+    def opponents_of(self, team):
+        return [i for i in range(self.capacity) if i % 2 != team]
+
+    def chat_message(self, seat, text, scope):
+        text = ''.join(c for c in str(text or '') if c.isprintable()).strip()[:160]
+        if not text:
+            raise GameError('Escreva alguma coisa antes de enviar.')
+        if scope != 'team' or self.capacity != 4:
+            scope = 'room'
+        now = time.time()
+        if len([m for m in self.chat if m['seat'] == seat and now - m['at'] < 10]) >= 8:
+            raise GameError('Calma no chat! Espere um instante.')
+        self.chat_seq += 1
+        self.chat.append({'id': self.chat_seq, 'seat': seat, 'name': self.players[seat]['name'],
+                          'team': seat % 2, 'scope': scope, 'text': text, 'at': now})
+        self.chat = self.chat[-200:]
+        self.updated = now
+
     def can_raise(self, seat):
         return (self.phase == 'playing' and seat == self.turn and not self.pending
                 and self.eleven is None and not self.iron and self.stake < 12
@@ -195,8 +215,17 @@ class Room:
         p = self.pending
         if self.phase != 'playing' or not p or seat % 2 == p['team']:
             raise GameError('Não há pedido para sua equipe responder.')
+        if seat in (p.get('ran') or []):
+            raise GameError('Você já quis correr. Agora a decisão é do seu parceiro.')
         if answer == 'run':
-            self.award(p['team'], self.stake, 'Pedido recusado.')
+            ran = p.setdefault('ran', [])
+            ran.append(seat)
+            holdouts = [i for i in self.opponents_of(p['team']) if i not in ran]
+            if holdouts:
+                names = ' e '.join(self.players[i]['name'] for i in holdouts)
+                self.say(f'{self.players[seat]["name"]} quer correr. Falta {names} decidir.')
+            else:
+                self.award(p['team'], self.stake, 'Pedido recusado.')
         elif answer == 'accept':
             self.stake = p['value']
             self.raise_team = seat % 2
@@ -285,6 +314,8 @@ class Room:
             self.say(f'{self.players[seat]["name"]} pediu {"TRUCO" if value == 3 else value}!')
         elif action == 'respond':
             self.respond(seat, data.get('answer'))
+        elif action == 'chat':
+            self.chat_message(seat, data.get('text'), data.get('scope'))
         else:
             raise GameError('Ação indisponível neste momento.')
         self.updated = time.time()
@@ -315,8 +346,10 @@ class Room:
             if seat is not None:
                 self.respond(seat, 'accept')
         elif self.phase == 'playing' and self.pending:
-            seat = next((i for i, p in enumerate(self.players) if i % 2 != self.pending['team'] and p['bot']), None)
-            if any(not p['bot'] and i % 2 != self.pending['team'] for i, p in enumerate(self.players)):
+            ran = self.pending.get('ran') or []
+            opponents = self.opponents_of(self.pending['team'])
+            seat = next((i for i in opponents if self.players[i]['bot'] and i not in ran), None)
+            if any(not self.players[i]['bot'] and i not in ran for i in opponents):
                 seat = None
             if seat is not None:
                 power = max(strength(c, self.vira) for c in self.hands[seat]) if self.hands[seat] else 0
@@ -356,6 +389,7 @@ class Room:
                 'can_raise': self.can_raise(seat), 'log': self.log[-12:], 'hand_no': self.hand_no,
                 'cut_enabled': self.cut_enabled, 'cutter': self.cutter, 'cut_position': self.cut_position,
                 'trick_winner': self.trick_winner,
+                'chat': [m for m in self.chat if m['scope'] == 'room' or m['team'] == seat % 2][-40:],
                 'next_in': max(0, round(self.deadline - time.time())) if self.phase in ('trick_end', 'hand_end', 'shuffling', 'cut', 'cutting') else 0}
 
 
